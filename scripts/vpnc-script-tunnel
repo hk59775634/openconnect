@@ -1,0 +1,46 @@
+#!/bin/bash
+# Example vpnc-script wrapper that enables openconnect-dst-helper for
+# ocserv-tunnel / AnyConnect Dynamic Split Tunneling (SPEC-02).
+#
+# Install:
+#   cp scripts/vpnc-script-tunnel /usr/local/etc/vpnc-script-tunnel
+#   chmod +x /usr/local/etc/vpnc-script-tunnel scripts/openconnect-dst-helper
+#   openconnect --script=/usr/local/etc/vpnc-script-tunnel https://vpn.example.com/group
+#
+# Requires a real vpnc-script (DEFAULT_SCRIPT or VPNC_SCRIPT).
+
+set -euo pipefail
+
+REAL_SCRIPT="${VPNC_SCRIPT:-/usr/share/vpnc-scripts/vpnc-script}"
+if [[ ! -x "${REAL_SCRIPT}" ]]; then
+  REAL_SCRIPT="/etc/vpnc/vpnc-script"
+fi
+HELPER="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/openconnect-dst-helper"
+if [[ ! -x "${HELPER}" ]]; then
+  HELPER="/usr/local/libexec/openconnect-dst-helper"
+fi
+PIDFILE="${DST_PIDFILE:-/run/openconnect-dst.pid}"
+
+case "${reason:-}" in
+  connect)
+    "${REAL_SCRIPT}"
+    if [[ -n "${CISCO_DYNAMIC_SPLIT_INCLUDE_DOMAINS:-}${CISCO_DYNAMIC_SPLIT_EXCLUDE_DOMAINS:-}" ]]; then
+      if [[ -x "${HELPER}" ]]; then
+        # Export env for helper; run in background
+        export CISCO_DYNAMIC_SPLIT_INCLUDE_DOMAINS CISCO_DYNAMIC_SPLIT_EXCLUDE_DOMAINS
+        export TUNDEV VPNGATEWAY INTERNAL_IP4_ADDRESS
+        "${HELPER}" --daemon --pidfile "${PIDFILE}" &
+        disown || true
+      fi
+    fi
+    ;;
+  disconnect|reconnect|attempt-reconnect)
+    if [[ -x "${HELPER}" ]]; then
+      "${HELPER}" --stop --pidfile "${PIDFILE}" || true
+    fi
+    "${REAL_SCRIPT}"
+    ;;
+  *)
+    "${REAL_SCRIPT}"
+    ;;
+esac

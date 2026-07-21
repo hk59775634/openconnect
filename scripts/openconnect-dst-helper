@@ -1,0 +1,173 @@
+#!/bin/bash
+# openconnect-dst-helper — poll DNS for Dynamic Split Tunnel domains and
+# install host routes (AnyConnect / ocserv-tunnel SPEC-02 compatible).
+#
+# Env (set by openconnect vpnc-script connect reason):
+#   CISCO_DYNAMIC_SPLIT_INCLUDE_DOMAINS  comma-separated
+#   CISCO_DYNAMIC_SPLIT_EXCLUDE_DOMAINS  comma-separated
+#   TUNDEV, VPNGATEWAY, INTERNAL_IP4_ADDRESS, reason
+#
+# Usage from vpnc-script (connect):
+#   if [ -n "$CISCO_DYNAMIC_SPLIT_INCLUDE_DOMAINS$CISCO_DYNAMIC_SPLIT_EXCLUDE_DOMAINS" ]; then
+#     openconnect-dst-helper --daemon --pidfile /run/openconnect-dst.pid &
+#   fi
+# Usage (disconnect):
+#   openconnect-dst-helper --stop --pidfile /run/openconnect-dst.pid
+#
+set -euo pipefail
+
+INTERVAL="${DST_POLL_INTERVAL:-5}"
+PIDFILE=""
+DAEMON=0
+STOP=0
+STATE_DIR="${DST_STATE_DIR:-/run/openconnect-dst}"
+
+usage() {
+  echo "Usage: $0 [--daemon] [--pidfile PATH] [--interval SEC] [--stop]" >&2
+  exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --daemon) DAEMON=1; shift ;;
+    --stop) STOP=1; shift ;;
+    --pidfile) PIDFILE="$2"; shift 2 ;;
+    --interval) INTERVAL="$2"; shift 2 ;;
+    -h|--help) usage ;;
+    *) usage ;;
+  esac
+done
+
+if [[ "${STOP}" -eq 1 ]]; then
+  if [[ -n "${PIDFILE}" && -f "${PIDFILE}" ]]; then
+    kill "$(cat "${PIDFILE}")" 2>/dev/null || true
+    rm -f "${PIDFILE}"
+  fi
+  exit 0
+fi
+
+INC="${CISCO_DYNAMIC_SPLIT_INCLUDE_DOMAINS:-}"
+EXC="${CISCO_DYNAMIC_SPLIT_EXCLUDE_DOMAINS:-}"
+TUNDEV="${TUNDEV:-}"
+VPNGW="${VPNGATEWAY:-}"
+
+if [[ -z "${INC}${EXC}" ]]; then
+  echo "openconnect-dst-helper: no DST domains in environment" >&2
+  exit 0
+fi
+if [[ -z "${TUNDEV}" ]]; then
+  echo "openconnect-dst-helper: TUNDEV not set" >&2
+  exit 1
+fi
+
+mkdir -p "${STATE_DIR}"
+INC_FILE="${STATE_DIR}/include.routes"
+EXC_FILE="${STATE_DIR}/exclude.routes"
+: > "${INC_FILE}"
+: > "${EXC_FILE}"
+
+# Detect default gateway (for exclude routes that should bypass VPN)
+ORIG_GW="$(ip -4 route show default 0.0.0.0/0 2>/dev/null | awk '{print $3; exit}')"
+ORIG_DEV="$(ip -4 route show default 0.0.0.0/0 2>/dev/null | awk '{print $5; exit}')"
+# Prefer non-tunnel default if multiple
+if [[ "${ORIG_DEV}" == "${TUNDEV}" ]]; then
+  ORIG_GW="$(ip -4 route show default 2>/dev/null | awk -v t="$TUNDEV" '$5!=t {print $3; exit}')"
+  ORIG_DEV="$(ip -4 route show default 2>/dev/null | awk -v t="$TUNDEV" '$5!=t {print $5; exit}')"
+fi
+
+resolve_ips() {
+  local domain="$1"
+  getent ahostsv4 "${domain}" 2>/dev/null | awk '{print $1}' | sort -u
+}
+
+sync_include() {
+  local domain ip tmp
+  tmp="$(mktemp)"
+  IFS=',' read -ra DOMS <<< "${INC}"
+  for domain in "${DOMS[@]}"; do
+    domain="$(echo "${domain}" | xargs)"
+    [[ -z "${domain}" ]] && continue
+    while read -r ip; do
+      [[ -z "${ip}" ]] && continue
+      echo "${ip}" >> "${tmp}"
+      if ! ip -4 route show "${ip}/32" 2>/dev/null | grep -q "dev ${TUNDEV}"; then
+        ip -4 route replace "${ip}/32" dev "${TUNDEV}" 2>/dev/null || true
+      fi
+    done < <(resolve_ips "${domain}")
+  done
+  sort -u "${tmp}" -o "${tmp}"
+  # Remove stale include host routes we previously added
+  if [[ -f "${INC_FILE}" ]]; then
+    while read -r ip; do
+      [[ -z "${ip}" ]] && continue
+      if ! grep -qxF "${ip}" "${tmp}"; then
+        ip -4 route del "${ip}/32" dev "${TUNDEV}" 2>/dev/null || true
+      fi
+    done < "${INC_FILE}"
+  fi
+  mv "${tmp}" "${INC_FILE}"
+}
+
+sync_exclude() {
+  local domain ip tmp
+  [[ -z "${ORIG_GW}" || -z "${ORIG_DEV}" ]] && return 0
+  tmp="$(mktemp)"
+  IFS=',' read -ra DOMS <<< "${EXC}"
+  for domain in "${DOMS[@]}"; do
+    domain="$(echo "${domain}" | xargs)"
+    [[ -z "${domain}" ]] && continue
+    while read -r ip; do
+      [[ -z "${ip}" ]] && continue
+      # Never exclude the VPN gateway itself
+      [[ "${ip}" == "${VPNGW}" ]] && continue
+      echo "${ip}" >> "${tmp}"
+      if ! ip -4 route show "${ip}/32" 2>/dev/null | grep -q "via ${ORIG_GW}"; then
+        ip -4 route replace "${ip}/32" via "${ORIG_GW}" dev "${ORIG_DEV}" 2>/dev/null || true
+      fi
+    done < <(resolve_ips "${domain}")
+  done
+  sort -u "${tmp}" -o "${tmp}"
+  if [[ -f "${EXC_FILE}" ]]; then
+    while read -r ip; do
+      [[ -z "${ip}" ]] && continue
+      if ! grep -qxF "${ip}" "${tmp}"; then
+        ip -4 route del "${ip}/32" via "${ORIG_GW}" dev "${ORIG_DEV}" 2>/dev/null || true
+      fi
+    done < "${EXC_FILE}"
+  fi
+  mv "${tmp}" "${EXC_FILE}"
+}
+
+cleanup() {
+  if [[ -f "${INC_FILE}" ]]; then
+    while read -r ip; do
+      [[ -n "${ip}" ]] && ip -4 route del "${ip}/32" dev "${TUNDEV}" 2>/dev/null || true
+    done < "${INC_FILE}"
+  fi
+  if [[ -f "${EXC_FILE}" && -n "${ORIG_GW}" ]]; then
+    while read -r ip; do
+      [[ -n "${ip}" ]] && ip -4 route del "${ip}/32" via "${ORIG_GW}" 2>/dev/null || true
+    done < "${EXC_FILE}"
+  fi
+  [[ -n "${PIDFILE}" ]] && rm -f "${PIDFILE}"
+}
+
+loop() {
+  trap cleanup EXIT
+  while true; do
+    [[ -n "${INC}" ]] && sync_include
+    [[ -n "${EXC}" ]] && sync_exclude
+    sleep "${INTERVAL}"
+  done
+}
+
+if [[ "${DAEMON}" -eq 1 ]]; then
+  if [[ -n "${PIDFILE}" ]]; then
+    echo $$ > "${PIDFILE}"
+  fi
+  loop
+else
+  # one-shot sync
+  [[ -n "${INC}" ]] && sync_include
+  [[ -n "${EXC}" ]] && sync_exclude
+fi
