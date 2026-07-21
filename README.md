@@ -56,6 +56,7 @@ DST 域名由服务端 Post-Auth XML 下发。使用 `vpnc-script-tunnel` 时会
 ## 文档
 
 - [`docs/OCSERV-TUNNEL-COMPAT.md`](docs/OCSERV-TUNNEL-COMPAT.md)  
+- [`docs/DST-SDK-API.md`](docs/DST-SDK-API.md) — 稳定 C API 与各平台路由  
 - 服务端：[hk59775634/ocserv](https://github.com/hk59775634/ocserv)
 
 ## 许可

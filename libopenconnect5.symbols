@@ -9,6 +9,7 @@ libopenconnect.so.5 libopenconnect5 #MINVER#
  OPENCONNECT_5_7@OPENCONNECT_5_7 8.20
  OPENCONNECT_5_8@OPENCONNECT_5_8 9.00
  OPENCONNECT_5_9@OPENCONNECT_5_9 9.12
+ OPENCONNECT_5_10@OPENCONNECT_5_10 9.12-tunnel.2
  openconnect_check_peer_cert_hash@OPENCONNECT_5.0 7.00
  openconnect_clear_cookie@OPENCONNECT_5.0 7.00
  openconnect_free_cert_info@OPENCONNECT_5.0 7.00
@@ -103,3 +104,10 @@ libopenconnect.so.5 libopenconnect5 #MINVER#
  openconnect_set_mca_key_password@OPENCONNECT_5_8 9.00
  openconnect_set_useragent@OPENCONNECT_5_8 9.00
  openconnect_set_sni@OPENCONNECT_5_9 9.12
+ openconnect_get_dynamic_split_domains@OPENCONNECT_5_10 9.12-tunnel.2
+ openconnect_set_dst_domains_handler@OPENCONNECT_5_10 9.12-tunnel.2
+ openconnect_set_dst_routing@OPENCONNECT_5_10 9.12-tunnel.2
+ openconnect_set_dst_poll_interval@OPENCONNECT_5_10 9.12-tunnel.2
+ openconnect_dst_sync_routes@OPENCONNECT_5_10 9.12-tunnel.2
+ openconnect_dst_poll@OPENCONNECT_5_10 9.12-tunnel.2
+ openconnect_dst_clear_routes@OPENCONNECT_5_10 9.12-tunnel.2

@@ -33,9 +33,16 @@ extern "C" {
 #endif
 
 #define OPENCONNECT_API_VERSION_MAJOR 5
-#define OPENCONNECT_API_VERSION_MINOR 9
+#define OPENCONNECT_API_VERSION_MINOR 10
 
 /*
+ * API version 5.10 (openconnect-tunnel 9.12-tunnel.2):
+ *  - Add openconnect_get_dynamic_split_domains()
+ *  - Add openconnect_set_dst_domains_handler()
+ *  - Add openconnect_set_dst_routing() / openconnect_set_dst_poll_interval()
+ *  - Add openconnect_dst_sync_routes() / openconnect_dst_poll()
+ *  - Add openconnect_dst_clear_routes()
+ *
  * API version 5.9 (v9.12; 2023-05-20):
  *  - Add openconnect_set_sni()
  *
@@ -668,6 +675,40 @@ int openconnect_get_ip_info(struct openconnect_info *,
 			    const struct oc_ip_info **info,
 			    const struct oc_vpn_option **cstp_options,
 			    const struct oc_vpn_option **dtls_options);
+
+/*
+ * Dynamic Split Tunnel (DST) — ocserv-tunnel / AnyConnect Post-Auth XML.
+ *
+ * Domain string pointers are owned by the library (valid until the next
+ * rekey/reconnect that replaces IP config, or vpninfo_free). Arrays may be
+ * NULL when empty.
+ *
+ * Mobile apps (Android VpnService / iOS Network Extension) should set a
+ * dst_domains handler and install routes/filters themselves. Desktop apps
+ * may enable built-in routing via openconnect_set_dst_routing().
+ */
+int openconnect_get_dynamic_split_domains(struct openconnect_info *vpninfo,
+					 const char ***includes, int *n_include,
+					 const char ***excludes, int *n_exclude);
+
+typedef void (*openconnect_dst_domains_vfn)(void *privdata,
+					    const char **includes, int n_include,
+					    const char **excludes, int n_exclude);
+void openconnect_set_dst_domains_handler(struct openconnect_info *vpninfo,
+					openconnect_dst_domains_vfn cb);
+
+/* Enable/disable library-managed host-route sync (Linux/macOS/BSD/Win best-effort). */
+void openconnect_set_dst_routing(struct openconnect_info *vpninfo, int enable);
+void openconnect_set_dst_poll_interval(struct openconnect_info *vpninfo, int seconds);
+
+/* Resolve DST domains and add/update host routes. Safe to call manually. */
+int openconnect_dst_sync_routes(struct openconnect_info *vpninfo);
+
+/* Called from mainloop when dst_routing is enabled; adjusts *timeout_ms. */
+int openconnect_dst_poll(struct openconnect_info *vpninfo, int *timeout_ms);
+
+/* Remove routes previously installed by the library. */
+void openconnect_dst_clear_routes(struct openconnect_info *vpninfo);
 
 int openconnect_get_port(struct openconnect_info *);
 const char *openconnect_get_cookie(struct openconnect_info *);

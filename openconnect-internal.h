@@ -411,6 +411,7 @@ struct pkt_q {
 };
 
 struct vpn_proto;
+struct dst_installed_route;
 
 struct openconnect_info {
 	const struct vpn_proto *proto;
@@ -813,6 +814,19 @@ struct openconnect_info {
 	openconnect_getaddrinfo_vfn getaddrinfo_override;
 	openconnect_setup_tun_vfn setup_tun;
 	openconnect_reconnected_vfn reconnected;
+	openconnect_dst_domains_vfn dst_domains_cb;
+
+	/* DST routing engine (openconnect-tunnel) */
+	unsigned int dst_routing;
+	int dst_poll_secs;
+	time_t dst_last_poll;
+	char *dst_orig_gw;
+	char *dst_orig_dev;
+	char **dst_inc_array;
+	char **dst_exc_array;
+	int dst_inc_n;
+	int dst_exc_n;
+	struct dst_installed_route *dst_installed;
 
 	int (*ssl_read)(struct openconnect_info *vpninfo, char *buf, size_t len);
 	int (*ssl_gets)(struct openconnect_info *vpninfo, char *buf, size_t len);
@@ -1243,6 +1257,7 @@ void free_split_routes(struct oc_ip_info *ip_info);
 void free_dynamic_split_domains(struct oc_ip_info *ip_info);
 int parse_post_auth_dst(struct openconnect_info *vpninfo, const char *xml,
 			struct oc_ip_info *ip_info);
+void openconnect_dst_notify(struct openconnect_info *vpninfo);
 int install_vpn_opts(struct openconnect_info *vpninfo, struct oc_vpn_option *opt,
 		     struct oc_ip_info *ip_info);
 

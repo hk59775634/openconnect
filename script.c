@@ -507,6 +507,7 @@ void prepare_script_env(struct openconnect_info *vpninfo)
 	}
 
 	setenv_cstp_opts(vpninfo);
+	openconnect_dst_notify(vpninfo);
 }
 
 void free_split_routes(struct oc_ip_info *ip_info)
@@ -718,6 +719,11 @@ int script_config_tun(struct openconnect_info *vpninfo, const char *reason)
 
 	if (!vpninfo->vpnc_script || vpninfo->script_tun)
 		return 0;
+
+	if (reason && (!strcmp(reason, "disconnect") ||
+		       !strcmp(reason, "reconnect") ||
+		       !strcmp(reason, "attempt-reconnect")))
+		openconnect_dst_clear_routes(vpninfo);
 
 	pid = fork();
 	if (!pid) {

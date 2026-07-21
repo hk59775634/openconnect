@@ -225,6 +225,8 @@ int openconnect_mainloop(struct openconnect_info *vpninfo,
 			break;
 		did_work += ret;
 
+		if (tun_is_up(vpninfo) && vpninfo->dst_routing)
+			did_work += openconnect_dst_poll(vpninfo, &timeout);
 
 		/* Tun must be last because it will set/clear its bit
 		   in the select_rfds according to the queue length */
