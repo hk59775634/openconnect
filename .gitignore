@@ -87,3 +87,17 @@ file-list.txt
 /config.status
 /config.log
 /autom4te.cache/
+
+# Client packaging outputs / secrets (never commit keystore)
+/dist/
+/packaging/secrets/
+*.jks
+*.keystore
+/json/.dirstamp
+/tests/buftest
+/tests/softhsm2.conf
+
+# Track Android NDK build files (override blanket Makefile ignore)
+!android/Makefile
+!android/sysroot-patches/
+!android/sysroot-patches/**

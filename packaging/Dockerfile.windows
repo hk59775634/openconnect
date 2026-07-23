@@ -1,0 +1,28 @@
+# Cross-build Windows openconnect NSIS installer (MinGW64 + GnuTLS)
+FROM fedora:40
+
+RUN dnf install -y \
+        mingw64-filesystem \
+        mingw64-gcc \
+        mingw64-gcc-c++ \
+        mingw64-gnutls \
+        mingw64-libxml2 \
+        mingw64-zlib \
+        mingw64-p11-kit \
+        mingw64-gettext \
+        mingw64-nsis \
+        mingw32-nsis \
+        mingw-nsis-base \
+        automake autoconf libtool \
+        pkgconf-pkg-config gettext \
+        make git curl jq unzip which zip \
+        diffutils \
+        perl python3 \
+    && dnf clean all \
+    && ls /usr/share/nsis/Stubs/ | head
+
+WORKDIR /build
+COPY packaging/build-windows.sh /usr/local/bin/build-windows.sh
+RUN chmod +x /usr/local/bin/build-windows.sh
+
+ENTRYPOINT ["/usr/local/bin/build-windows.sh"]
